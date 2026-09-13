@@ -1,5 +1,5 @@
-from aiogram import F, Router
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram import Bot, F, Router
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -10,8 +10,19 @@ from utils import format_chance
 router = Router(name="common")
 
 
-async def show_main_menu(message: Message, edit: bool = False):
-    admin = await db.is_admin(message.chat.id)
+async def get_avatar_file_id(bot: Bot, user_id: int) -> str | None:
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+    except Exception:
+        return None
+    if photos.total_count > 0:
+        return photos.photos[0][-1].file_id
+    return None
+
+
+async def show_main_menu(message: Message, bot: Bot, edit: bool = False):
+    user_id = message.chat.id
+    admin = await db.is_admin(user_id)
     text = (
         "🎲 <b>Саммон-бот</b>\n\n"
         "Чтобы призвать карточку, напиши в любом чате юзернейм бота через @ "
@@ -19,25 +30,30 @@ async def show_main_menu(message: Message, edit: bool = False):
         "Опыт и коллекцию карточек можно посмотреть здесь."
     )
     kb = main_menu_kb(admin)
+    avatar = await get_avatar_file_id(bot, user_id)
+
     if edit:
         try:
-            await message.edit_text(text, reply_markup=kb)
-            return
+            await message.delete()
         except Exception:
             pass
-    await message.answer(text, reply_markup=kb)
+
+    if avatar:
+        await message.answer_photo(photo=avatar, caption=text, reply_markup=kb)
+    else:
+        await message.answer(text, reply_markup=kb)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
-    await show_main_menu(message)
+    await show_main_menu(message, bot)
 
 
 @router.callback_query(F.data == "menu:main")
-async def cb_main(call: CallbackQuery, state: FSMContext):
+async def cb_main(call: CallbackQuery, state: FSMContext, bot: Bot):
     await state.clear()
-    await show_main_menu(call.message, edit=True)
+    await show_main_menu(call.message, bot, edit=True)
     await call.answer()
 
 
@@ -51,7 +67,11 @@ async def cb_profile(call: CallbackQuery):
         f"✨ Опыт: <b>{exp}</b>\n"
         f"🎴 Карточек в коллекции: <b>{len(collection)}</b>"
     )
-    await call.message.edit_text(text, reply_markup=back_kb("menu:main"))
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await call.message.answer(text, reply_markup=back_kb("menu:main"))
     await call.answer()
 
 
@@ -68,7 +88,11 @@ async def cb_collection(call: CallbackQuery):
                 f"[{c['summon_name']}]"
             )
         text = "\n".join(lines)
-    await call.message.edit_text(text, reply_markup=back_kb("menu:main"))
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await call.message.answer(text, reply_markup=back_kb("menu:main"))
     await call.answer()
 
 
@@ -78,5 +102,5 @@ async def cb_noop(call: CallbackQuery):
 
 
 @router.message(StateFilter(None))
-async def fallback(message: Message):
-    await show_main_menu(message)
+async def fallback(message: Message, bot: Bot):
+    await show_main_menu(message, bot)

@@ -20,5 +20,11 @@ async def cb_admin_menu(call: CallbackQuery, state: FSMContext):
     if not await require_admin(call):
         return
     await state.clear()
-    await call.message.edit_text("⚙️ <b>Админ-панель</b>", reply_markup=admin_menu_kb())
+    text = "⚙️ <b>Админ-панель</b>"
+    kb = admin_menu_kb()
+    try:
+        await call.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await call.message.delete()
+        await call.message.answer(text, reply_markup=kb)
     await call.answer()
