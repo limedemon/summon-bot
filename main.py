@@ -7,6 +7,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery, ChosenInlineResult, InlineQuery, Message, TelegramObject
 
+import botinfo
 import db
 from config import BOT_TOKEN
 from handlers import get_root_router
@@ -33,6 +34,10 @@ async def main():
     await db.init_db()
     try:
         bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        me = await bot.get_me()
+        botinfo.BOT_USERNAME = me.username
+        logging.info("Запущен как @%s", me.username)
+
         dp = Dispatcher()
 
         tracker = UserTrackingMiddleware()

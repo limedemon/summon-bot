@@ -6,41 +6,10 @@ from decimal import Decimal, InvalidOperation
 # A single thin divider used across every screen so the bot feels like one product.
 DIV = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"
 
-# From the most common rarity to the rarest one. Rarities are created by admins with
-# arbitrary names, so the colour is derived from the rarity's rank among all existing
-# rarities (sorted by chance), never from a hardcoded name.
-RARITY_PALETTE = ("⚪", "🟢", "🔵", "🟣", "🟠", "🔴")
-
 
 def esc(value) -> str:
     """Escapes admin/user supplied text before putting it into HTML markup."""
     return html.escape(str(value if value is not None else ""), quote=False)
-
-
-def rarity_badges(rarities) -> dict[str, str]:
-    """Maps every distinct rarity chance to a colour emoji by its rank.
-
-    `rarities` is the output of db.list_rarities_sorted() (chance descending).
-    The most common chance gets the first palette colour, the rarest the last one.
-    """
-    chances = sorted({float(r["chance"]) for r in rarities}, reverse=True)
-    last = len(RARITY_PALETTE) - 1
-    if not chances:
-        return {}
-    if len(chances) == 1:
-        return {format(chances[0], "f"): RARITY_PALETTE[0]}
-    return {
-        format(c, "f"): RARITY_PALETTE[round(i * last / (len(chances) - 1))]
-        for i, c in enumerate(chances)
-    }
-
-
-def rarity_badge(chance, badges: dict[str, str]) -> str:
-    """Colour emoji for one rarity chance; falls back to a neutral dot."""
-    try:
-        return badges.get(format(float(chance), "f"), "⚪")
-    except (TypeError, ValueError):
-        return "⚪"
 
 
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
@@ -59,6 +28,11 @@ def exp_word(n: int) -> str:
 
 def cards_word(n: int) -> str:
     return plural_ru(n, "карточка", "карточки", "карточек")
+
+
+def fmt_num(n) -> str:
+    """1240 -> '1 240' (narrow no-break space, so it never wraps mid-number)."""
+    return f"{int(n):,}".replace(",", " ")
 
 
 def parse_chance(text: str) -> str | None:

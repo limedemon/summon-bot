@@ -16,16 +16,15 @@ from keyboards import (
     summons_pick_kb,
 )
 from states import AddCard, EditCard
-from utils import DIV, esc, exp_word, format_chance, parse_positive_int, rarity_badge, rarity_badges
+from utils import DIV, esc, exp_word, format_chance, parse_positive_int
 
 router = Router(name="admin_cards")
 
 
 def rarity_pick_for_card_kb(rarities, cb_prefix: str, back_cb: str):
     b = InlineKeyboardBuilder()
-    badges = rarity_badges(rarities)
     for r in rarities:
-        b.row(InlineKeyboardButton(text=rarity_label(r, badges), callback_data=f"{cb_prefix}:{r['id']}"))
+        b.row(InlineKeyboardButton(text=rarity_label(r), callback_data=f"{cb_prefix}:{r['id']}"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb))
     return b.as_markup()
 
@@ -61,16 +60,15 @@ async def show_cards_list(target, summon_id: int, page: int = 0, edit: bool = Tr
         await target.answer(text, reply_markup=kb)
 
 
-async def render_card_caption(card) -> str:
+def render_card_caption(card) -> str:
     """Same visual language as a summon result, plus the admin-only numbers."""
-    badges = rarity_badges(await db.list_rarities_sorted())
     exp = int(card["exp_reward"])
     summon = card["summon_name"] if "summon_name" in card.keys() else None
     subtitle = f"{esc(card['rarity_name'])} · {format_chance(card['rarity_chance'])}%"
     if summon:
         subtitle += f" · {esc(summon)}"
     return (
-        f"{rarity_badge(card['rarity_chance'], badges)} <b>{esc(card['name'])}</b>\n"
+        f"🎴 <b>{esc(card['name'])}</b>\n"
         f"<i>{subtitle}</i>\n"
         f"{DIV}\n"
         f"✨ Награда · <b>{exp}</b> {exp_word(exp)}\n"
@@ -82,14 +80,14 @@ async def send_card_view(message: Message, card_id: int):
     card = await db.get_card(card_id)
     await message.answer_photo(
         photo=card["photo_file_id"],
-        caption=await render_card_caption(card),
+        caption=render_card_caption(card),
         reply_markup=card_view_kb(card_id, card["summon_id"]),
     )
 
 
 async def refresh_card_view(bot: Bot, chat_id: int, message_id: int, card_id: int, new_photo: str | None = None):
     card = await db.get_card(card_id)
-    caption = await render_card_caption(card)
+    caption = render_card_caption(card)
     kb = card_view_kb(card_id, card["summon_id"])
     if new_photo:
         await bot.edit_message_media(
@@ -280,11 +278,10 @@ async def cb_edit_rarity(call: CallbackQuery):
         return
     card_id = int(call.data.split(":")[1])
     rarities = await db.list_rarities_sorted()
-    badges = rarity_badges(rarities)
     b = InlineKeyboardBuilder()
     for r in rarities:
         b.row(InlineKeyboardButton(
-            text=rarity_label(r, badges), callback_data=f"adm_card_set_rarity:{card_id}:{r['id']}"
+            text=rarity_label(r), callback_data=f"adm_card_set_rarity:{card_id}:{r['id']}"
         ))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_card_view_back:{card_id}"))
     await call.message.edit_caption(caption="💎 <i>Выбери новую редкость:</i>", reply_markup=b.as_markup())

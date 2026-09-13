@@ -11,20 +11,38 @@ from aiogram.types import (
     InputTextMessageContent,
 )
 
+import botinfo
 import db
 from config import COOLDOWN_SECONDS
 from utils import (
     DIV,
     esc,
     exp_word,
+    fmt_num,
     format_chance,
     format_duration,
-    rarity_badge,
-    rarity_badges,
     weighted_pick,
 )
 
 router = Router(name="inline")
+
+
+def collection_kb() -> InlineKeyboardMarkup | None:
+    """Wide CTA under a summon result: a deep link into the bot's private chat.
+
+    The result message usually lives in someone else's group, where a callback
+    button would be useless — so it has to be a t.me link with a /start payload.
+    """
+    if not botinfo.BOT_USERNAME:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🎴 Смотреть коллекцию",
+                url=f"https://t.me/{botinfo.BOT_USERNAME}?start=collection",
+            )
+        ]]
+    )
 
 
 @router.inline_query()
@@ -109,31 +127,38 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
     is_new = not await db.owns_card(user_id, card["id"])
     await db.grant_card(user_id, card["id"])
 
-    badges = rarity_badges(await db.list_rarities_sorted())
-    badge = rarity_badge(card["rarity_chance"], badges)
     exp = int(card["exp_reward"])
-    status = (
-        "🆕 <b>Новая карточка в коллекции</b>"
+    user = await db.get_user(user_id)
+    total_exp = int(user["exp"]) if user else exp
+
+    header = (
+        "🎊 <b>Новая карточка!</b>"
         if is_new
-        else "🔁 <i>Такая уже есть в коллекции</i>"
+        else "🔄 <b>Повтор</b> — <i>такая уже в коллекции</i>"
     )
 
     caption = (
-        f"{badge} <b>{esc(card['name'])}</b>\n"
-        f"<i>{esc(card['rarity_name'])} · {format_chance(card['rarity_chance'])}%"
-        f" · {esc(summon['name'])}</i>\n"
+        f"{header}\n"
+        f"🎴 <b>{esc(card['name'])}</b>\n"
         f"{DIV}\n"
-        f"{status}\n"
-        f"✨ <b>+{exp}</b> {exp_word(exp)}"
+        f"💎 Редкость · <b>{esc(card['rarity_name'])}</b> "
+        f"<i>{format_chance(card['rarity_chance'])}%</i>\n"
+        f"🌀 Саммон · <i>{esc(summon['name'])}</i>\n"
+        f"✨ Опыт · <b>+{fmt_num(exp)}</b> → "
+        f"<b>{fmt_num(total_exp)}</b> {exp_word(total_exp)}"
     )
 
+    kb = collection_kb()
     try:
         await bot.edit_message_media(
             inline_message_id=inline_message_id,
             media=InputMediaPhoto(media=card["photo_file_id"], caption=caption, parse_mode="HTML"),
-            reply_markup=None,
+            reply_markup=kb,
         )
     except Exception:
         await bot.edit_message_text(
-            inline_message_id=inline_message_id, text=caption, parse_mode="HTML"
+            inline_message_id=inline_message_id,
+            text=caption,
+            parse_mode="HTML",
+            reply_markup=kb,
         )

@@ -1,13 +1,12 @@
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from utils import format_chance, rarity_badge
+from utils import format_chance
 
 
-def rarity_label(rarity, badges: dict[str, str] | None = None) -> str:
-    """Button label for a rarity: colour dot, name and chance."""
-    dot = f"{rarity_badge(rarity['chance'], badges)} " if badges else ""
-    return f"{dot}{rarity['name']} · {format_chance(rarity['chance'])}%"
+def rarity_label(rarity) -> str:
+    """Button label for a rarity: name and chance."""
+    return f"{rarity['name']} · {format_chance(rarity['chance'])}%"
 
 
 def main_menu_kb(is_admin: bool):
@@ -78,11 +77,11 @@ def confirm_kb(yes_cb: str, no_cb: str):
 
 # ---------- rarities ----------
 
-def rarities_admin_kb(rarities, page, page_size, badges: dict[str, str] | None = None):
+def rarities_admin_kb(rarities, page, page_size):
     chunk, total_pages = paginate(rarities, page, page_size)
     b = InlineKeyboardBuilder()
     for r in chunk:
-        label = rarity_label(r, badges)
+        label = rarity_label(r)
         b.row(
             InlineKeyboardButton(text=label, callback_data="noop"),
             InlineKeyboardButton(text="✏️", callback_data=f"adm_rarity_edit:{r['id']}"),
@@ -103,10 +102,10 @@ def rarity_edit_kb(rarity_id: int):
     return b.as_markup()
 
 
-def rarity_pick_kb(rarities, cb_prefix: str, badges: dict[str, str] | None = None):
+def rarity_pick_kb(rarities, cb_prefix: str):
     b = InlineKeyboardBuilder()
     for r in rarities:
-        b.row(InlineKeyboardButton(text=rarity_label(r, badges), callback_data=f"{cb_prefix}:{r['id']}"))
+        b.row(InlineKeyboardButton(text=rarity_label(r), callback_data=f"{cb_prefix}:{r['id']}"))
     return b.as_markup()
 
 

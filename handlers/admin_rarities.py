@@ -7,7 +7,7 @@ from config import PAGE_SIZE
 from handlers.admin_menu import require_admin
 from keyboards import cancel_kb, confirm_kb, rarities_admin_kb, rarity_edit_kb
 from states import AddRarity, EditRarity
-from utils import DIV, esc, format_chance, parse_chance, rarity_badge, rarity_badges
+from utils import DIV, esc, format_chance, parse_chance
 
 router = Router(name="admin_rarities")
 
@@ -17,11 +17,11 @@ async def show_rarities(target, page: int = 0, edit: bool = True):
     if rarities:
         text = (
             f"💎 <b>Редкости</b>\n{DIV}\n"
-            "<i>От самой частой к самой редкой — цвет метки берётся отсюда.</i>"
+            "<i>От самой частой к самой редкой.</i>"
         )
     else:
         text = f"💎 <b>Редкости</b>\n{DIV}\n<i>Пока ни одной редкости нет.</i>"
-    kb = rarities_admin_kb(rarities, page, PAGE_SIZE, rarity_badges(rarities))
+    kb = rarities_admin_kb(rarities, page, PAGE_SIZE)
     if edit:
         await target.edit_text(text, reply_markup=kb)
     else:
@@ -103,9 +103,8 @@ async def cb_rarity_edit(call: CallbackQuery):
     if not rarity:
         await call.answer("Уже удалена", show_alert=True)
         return
-    badges = rarity_badges(await db.list_rarities_sorted())
     await call.message.edit_text(
-        f"{rarity_badge(rarity['chance'], badges)} <b>{esc(rarity['name'])}</b>\n"
+        f"💎 <b>{esc(rarity['name'])}</b>\n"
         f"<i>шанс · {format_chance(rarity['chance'])}%</i>\n"
         f"{DIV}\n<i>Что изменить?</i>",
         reply_markup=rarity_edit_kb(rarity_id),

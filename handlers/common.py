@@ -1,11 +1,11 @@
 from aiogram import Bot, F, Router
-from aiogram.filters import CommandStart, StateFilter
+from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 import db
 from keyboards import back_kb, main_menu_kb
-from utils import DIV, cards_word, esc, exp_word, format_chance, rarity_badge, rarity_badges
+from utils import DIV, cards_word, esc, exp_word, format_chance
 
 router = Router(name="common")
 
@@ -32,7 +32,7 @@ async def show_main_menu(message: Message, bot: Bot, edit: bool = False):
         f"{DIV}\n"
         f"Напиши <code>{esc(mention)}</code> в любом чате, выбери саммон — "
         "и выпадет случайная карточка.\n\n"
-        "<i>Чем реже карточка, тем ярче её метка.</i>"
+        "<i>Чем ниже шанс редкости, тем ценнее находка.</i>"
     )
     kb = main_menu_kb(admin)
     avatar = await get_avatar_file_id(bot, user_id)
@@ -50,8 +50,13 @@ async def show_main_menu(message: Message, bot: Bot, edit: bool = False):
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext, bot: Bot):
+async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: CommandObject):
     await state.clear()
+    # Deep link from the "смотреть коллекцию" button under an inline summon result.
+    if (command.args or "").strip() == "collection":
+        text = await render_collection(message.from_user.id)
+        await message.answer(text, reply_markup=back_kb("menu:main"))
+        return
     await show_main_menu(message, bot)
 
 
@@ -67,7 +72,6 @@ async def cb_profile(call: CallbackQuery):
     user = await db.get_user(call.from_user.id)
     exp = int(user["exp"]) if user else 0
     collection = await db.get_collection(call.from_user.id)
-    badges = rarity_badges(await db.list_rarities_sorted())
 
     lines = [
         f"👤 <b>{esc(call.from_user.first_name)}</b>",
@@ -78,7 +82,7 @@ async def cb_profile(call: CallbackQuery):
     if collection:
         best = min(collection, key=lambda c: float(c["rarity_chance"]))
         lines.append(
-            f"{rarity_badge(best['rarity_chance'], badges)} Жемчужина · "
+            f"💎 Жемчужина · "
             f"<b>{esc(best['name'])}</b> <i>({esc(best['rarity_name'])})</i>"
         )
     text = "\n".join(lines)
@@ -90,9 +94,9 @@ async def cb_profile(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(F.data == "menu:collection")
-async def cb_collection(call: CallbackQuery):
-    collection = await db.get_collection(call.from_user.id)
+async def render_collection(user_id: int) -> str:
+    """Collection screen text — shared by the menu button and the /start deep link."""
+    collection = await db.get_collection(user_id)
     if not collection:
         text = (
             "🎴 <b>Коллекция</b>\n"
@@ -101,7 +105,6 @@ async def cb_collection(call: CallbackQuery):
             "Вызови бота через @ в любом чате — и здесь появится первая карточка."
         )
     else:
-        badges = rarity_badges(await db.list_rarities_sorted())
         # rarest groups first, cards inside a group alphabetically
         groups: dict[str, list] = {}
         for c in collection:
@@ -117,7 +120,7 @@ async def cb_collection(call: CallbackQuery):
             cards = groups[name]
             chance = cards[0]["rarity_chance"]
             lines.append(
-                f"\n{rarity_badge(chance, badges)} <b>{esc(name)}</b> "
+                f"\n<b>{esc(name)}</b> "
                 f"<i>{format_chance(chance)}%</i> · {len(cards)}"
             )
             for c in sorted(cards, key=lambda x: x["name"].lower()):
@@ -126,6 +129,12 @@ async def cb_collection(call: CallbackQuery):
         text = "\n".join(lines)
         if len(text) > 3900:
             text = text[:3900].rsplit("\n", 1)[0] + "\n\n<i>…и ещё немного — список длинный.</i>"
+    return text
+
+
+@router.callback_query(F.data == "menu:collection")
+async def cb_collection(call: CallbackQuery):
+    text = await render_collection(call.from_user.id)
     try:
         await call.message.delete()
     except Exception:
