@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -12,10 +11,9 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Не задана переменная окружения BOT_TOKEN")
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
-DB_PATH = DATA_DIR / "bot.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Не задана переменная окружения DATABASE_URL")
 
 COOLDOWN_SECONDS = 5 * 60
 PAGE_SIZE = 8

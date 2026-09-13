@@ -31,20 +31,22 @@ class UserTrackingMiddleware(BaseMiddleware):
 
 async def main():
     await db.init_db()
+    try:
+        bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        dp = Dispatcher()
 
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
+        tracker = UserTrackingMiddleware()
+        dp.message.middleware(tracker)
+        dp.callback_query.middleware(tracker)
+        dp.inline_query.middleware(tracker)
+        dp.chosen_inline_result.middleware(tracker)
 
-    tracker = UserTrackingMiddleware()
-    dp.message.middleware(tracker)
-    dp.callback_query.middleware(tracker)
-    dp.inline_query.middleware(tracker)
-    dp.chosen_inline_result.middleware(tracker)
+        dp.include_router(get_root_router())
 
-    dp.include_router(get_root_router())
-
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        await db.close_db()
 
 
 if __name__ == "__main__":
