@@ -7,15 +7,21 @@ from config import PAGE_SIZE
 from handlers.admin_menu import require_admin
 from keyboards import cancel_kb, confirm_kb, rarities_admin_kb, rarity_edit_kb
 from states import AddRarity, EditRarity
-from utils import format_chance, parse_chance
+from utils import DIV, esc, format_chance, parse_chance, rarity_badge, rarity_badges
 
 router = Router(name="admin_rarities")
 
 
 async def show_rarities(target, page: int = 0, edit: bool = True):
     rarities = await db.list_rarities_sorted()
-    text = "💎 <b>Редкости</b>" if rarities else "💎 <b>Редкости</b>\n\nПока ни одной редкости нет."
-    kb = rarities_admin_kb(rarities, page, PAGE_SIZE)
+    if rarities:
+        text = (
+            f"💎 <b>Редкости</b>\n{DIV}\n"
+            "<i>От самой частой к самой редкой — цвет метки берётся отсюда.</i>"
+        )
+    else:
+        text = f"💎 <b>Редкости</b>\n{DIV}\n<i>Пока ни одной редкости нет.</i>"
+    kb = rarities_admin_kb(rarities, page, PAGE_SIZE, rarity_badges(rarities))
     if edit:
         await target.edit_text(text, reply_markup=kb)
     else:
@@ -82,7 +88,9 @@ async def process_rarity_chance(message: Message, state: FSMContext):
     name = data["name"]
     await db.add_rarity(name, chance)
     await state.clear()
-    await message.answer(f"✅ Редкость «{name}» ({format_chance(chance)}%) добавлена.")
+    await message.answer(
+        f"✅ Редкость <b>{esc(name)}</b> · <code>{format_chance(chance)}%</code> добавлена."
+    )
     await show_rarities(message, edit=False)
 
 
@@ -95,8 +103,11 @@ async def cb_rarity_edit(call: CallbackQuery):
     if not rarity:
         await call.answer("Уже удалена", show_alert=True)
         return
+    badges = rarity_badges(await db.list_rarities_sorted())
     await call.message.edit_text(
-        f"💎 <b>{rarity['name']}</b> — {format_chance(rarity['chance'])}%\n\nЧто изменить?",
+        f"{rarity_badge(rarity['chance'], badges)} <b>{esc(rarity['name'])}</b>\n"
+        f"<i>шанс · {format_chance(rarity['chance'])}%</i>\n"
+        f"{DIV}\n<i>Что изменить?</i>",
         reply_markup=rarity_edit_kb(rarity_id),
     )
     await call.answer()
@@ -177,7 +188,7 @@ async def cb_rarity_del(call: CallbackQuery):
         )
         return
     await call.message.edit_text(
-        f"Удалить редкость «{rarity['name']}»?",
+        f"🗑 Удалить редкость <b>{esc(rarity['name'])}</b>?",
         reply_markup=confirm_kb(f"adm_rarity_del_yes:{rarity_id}", "adm:rarities"),
     )
     await call.answer()

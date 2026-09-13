@@ -13,7 +13,16 @@ from aiogram.types import (
 
 import db
 from config import COOLDOWN_SECONDS
-from utils import format_chance, format_duration, weighted_pick
+from utils import (
+    DIV,
+    esc,
+    exp_word,
+    format_chance,
+    format_duration,
+    rarity_badge,
+    rarity_badges,
+    weighted_pick,
+)
 
 router = Router(name="inline")
 
@@ -43,10 +52,11 @@ async def handle_inline_query(query: InlineQuery):
         results.append(
             InlineQueryResultArticle(
                 id=str(s["id"]),
-                title=f"🎲 Суммонить {s['name']}",
+                title=f"🎲  {s['name']}",
                 description=description,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"🎲 Открываем саммон «{s['name']}»…"
+                    message_text=f"🎲 <b>{esc(s['name'])}</b>\n<i>раскрываем карточку…</i>",
+                    parse_mode="HTML",
                 ),
                 reply_markup=kb,
             )
@@ -68,7 +78,7 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
     summon = await db.get_summon(summon_id)
     if summon is None:
         await bot.edit_message_text(
-            inline_message_id=inline_message_id, text="⚠️ Этот саммон больше не существует."
+            inline_message_id=inline_message_id, text="⚠️ <i>Этот саммон больше не существует.</i>"
         )
         return
 
@@ -78,7 +88,10 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
         remaining = COOLDOWN_SECONDS - (now - last_used)
         await bot.edit_message_text(
             inline_message_id=inline_message_id,
-            text=f"⏳ «{summon['name']}» будет доступен через {format_duration(remaining)}.",
+            text=(
+                f"⏳ <b>{esc(summon['name'])}</b>\n"
+                f"<i>перезарядка</i> · <code>{format_duration(remaining)}</code>"
+            ),
         )
         return
 
@@ -86,7 +99,7 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
     if not cards:
         await bot.edit_message_text(
             inline_message_id=inline_message_id,
-            text=f"⚠️ В саммоне «{summon['name']}» пока нет карточек.",
+            text=f"⚠️ <i>В саммоне</i> <b>{esc(summon['name'])}</b> <i>пока нет карточек.</i>",
         )
         return
 
@@ -96,11 +109,22 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
     is_new = not await db.owns_card(user_id, card["id"])
     await db.grant_card(user_id, card["id"])
 
+    badges = rarity_badges(await db.list_rarities_sorted())
+    badge = rarity_badge(card["rarity_chance"], badges)
+    exp = int(card["exp_reward"])
+    status = (
+        "🆕 <b>Новая карточка в коллекции</b>"
+        if is_new
+        else "🔁 <i>Такая уже есть в коллекции</i>"
+    )
+
     caption = (
-        f"🎉 <b>{card['name']}</b>\n"
-        f"✨ Редкость: {card['rarity_name']} ({format_chance(card['rarity_chance'])}%)\n"
-        f"➕ {card['exp_reward']} опыта\n"
-        + ("🆕 Новая карточка в коллекции!" if is_new else "📎 Уже была в коллекции")
+        f"{badge} <b>{esc(card['name'])}</b>\n"
+        f"<i>{esc(card['rarity_name'])} · {format_chance(card['rarity_chance'])}%"
+        f" · {esc(summon['name'])}</i>\n"
+        f"{DIV}\n"
+        f"{status}\n"
+        f"✨ <b>+{exp}</b> {exp_word(exp)}"
     )
 
     try:

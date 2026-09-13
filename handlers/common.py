@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 
 import db
 from keyboards import back_kb, main_menu_kb
-from utils import format_chance
+from utils import DIV, cards_word, esc, exp_word, format_chance, rarity_badge, rarity_badges
 
 router = Router(name="common")
 
@@ -23,11 +23,16 @@ async def get_avatar_file_id(bot: Bot, user_id: int) -> str | None:
 async def show_main_menu(message: Message, bot: Bot, edit: bool = False):
     user_id = message.chat.id
     admin = await db.is_admin(user_id)
+    try:
+        mention = f"@{(await bot.me()).username}"
+    except Exception:
+        mention = "@бота"
     text = (
-        "🎲 <b>Саммон-бот</b>\n\n"
-        "Чтобы призвать карточку, напиши в любом чате юзернейм бота через @ "
-        "и выбери саммон из списка.\n\n"
-        "Опыт и коллекцию карточек можно посмотреть здесь."
+        "🎴 <b>Саммон карточек</b>\n"
+        f"{DIV}\n"
+        f"Напиши <code>{esc(mention)}</code> в любом чате, выбери саммон — "
+        "и выпадет случайная карточка.\n\n"
+        "<i>Чем реже карточка, тем ярче её метка.</i>"
     )
     kb = main_menu_kb(admin)
     avatar = await get_avatar_file_id(bot, user_id)
@@ -60,13 +65,23 @@ async def cb_main(call: CallbackQuery, state: FSMContext, bot: Bot):
 @router.callback_query(F.data == "menu:profile")
 async def cb_profile(call: CallbackQuery):
     user = await db.get_user(call.from_user.id)
-    exp = user["exp"] if user else 0
+    exp = int(user["exp"]) if user else 0
     collection = await db.get_collection(call.from_user.id)
-    text = (
-        f"👤 <b>Твой профиль</b>\n\n"
-        f"✨ Опыт: <b>{exp}</b>\n"
-        f"🎴 Карточек в коллекции: <b>{len(collection)}</b>"
-    )
+    badges = rarity_badges(await db.list_rarities_sorted())
+
+    lines = [
+        f"👤 <b>{esc(call.from_user.first_name)}</b>",
+        DIV,
+        f"✨ Опыт · <b>{exp}</b> {exp_word(exp)}",
+        f"🎴 Коллекция · <b>{len(collection)}</b> {cards_word(len(collection))}",
+    ]
+    if collection:
+        best = min(collection, key=lambda c: float(c["rarity_chance"]))
+        lines.append(
+            f"{rarity_badge(best['rarity_chance'], badges)} Жемчужина · "
+            f"<b>{esc(best['name'])}</b> <i>({esc(best['rarity_name'])})</i>"
+        )
+    text = "\n".join(lines)
     try:
         await call.message.delete()
     except Exception:
@@ -79,15 +94,38 @@ async def cb_profile(call: CallbackQuery):
 async def cb_collection(call: CallbackQuery):
     collection = await db.get_collection(call.from_user.id)
     if not collection:
-        text = "🎴 <b>Коллекция</b>\n\nПока пусто. Иди саммонить через @бота в любом чате!"
+        text = (
+            "🎴 <b>Коллекция</b>\n"
+            f"{DIV}\n"
+            "<i>Пока пусто.</i>\n"
+            "Вызови бота через @ в любом чате — и здесь появится первая карточка."
+        )
     else:
-        lines = ["🎴 <b>Твоя коллекция</b>\n"]
+        badges = rarity_badges(await db.list_rarities_sorted())
+        # rarest groups first, cards inside a group alphabetically
+        groups: dict[str, list] = {}
         for c in collection:
+            groups.setdefault(c["rarity_name"], []).append(c)
+        order = sorted(groups, key=lambda name: float(groups[name][0]["rarity_chance"]))
+
+        total = len(collection)
+        lines = [
+            f"🎴 <b>Коллекция</b> · <b>{total}</b> {cards_word(total)}",
+            DIV,
+        ]
+        for name in order:
+            cards = groups[name]
+            chance = cards[0]["rarity_chance"]
             lines.append(
-                f"• {c['name']} — {c['rarity_name']} ({format_chance(c['rarity_chance'])}%) "
-                f"[{c['summon_name']}]"
+                f"\n{rarity_badge(chance, badges)} <b>{esc(name)}</b> "
+                f"<i>{format_chance(chance)}%</i> · {len(cards)}"
             )
+            for c in sorted(cards, key=lambda x: x["name"].lower()):
+                lines.append(f"   <i>{esc(c['summon_name'])}</i> — {esc(c['name'])}")
+
         text = "\n".join(lines)
+        if len(text) > 3900:
+            text = text[:3900].rsplit("\n", 1)[0] + "\n\n<i>…и ещё немного — список длинный.</i>"
     try:
         await call.message.delete()
     except Exception:

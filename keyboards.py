@@ -1,7 +1,13 @@
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from utils import format_chance
+from utils import format_chance, rarity_badge
+
+
+def rarity_label(rarity, badges: dict[str, str] | None = None) -> str:
+    """Button label for a rarity: colour dot, name and chance."""
+    dot = f"{rarity_badge(rarity['chance'], badges)} " if badges else ""
+    return f"{dot}{rarity['name']} · {format_chance(rarity['chance'])}%"
 
 
 def main_menu_kb(is_admin: bool):
@@ -72,11 +78,11 @@ def confirm_kb(yes_cb: str, no_cb: str):
 
 # ---------- rarities ----------
 
-def rarities_admin_kb(rarities, page, page_size):
+def rarities_admin_kb(rarities, page, page_size, badges: dict[str, str] | None = None):
     chunk, total_pages = paginate(rarities, page, page_size)
     b = InlineKeyboardBuilder()
     for r in chunk:
-        label = f"{r['name']} ({format_chance(r['chance'])}%)"
+        label = rarity_label(r, badges)
         b.row(
             InlineKeyboardButton(text=label, callback_data="noop"),
             InlineKeyboardButton(text="✏️", callback_data=f"adm_rarity_edit:{r['id']}"),
@@ -97,11 +103,10 @@ def rarity_edit_kb(rarity_id: int):
     return b.as_markup()
 
 
-def rarity_pick_kb(rarities, cb_prefix: str):
+def rarity_pick_kb(rarities, cb_prefix: str, badges: dict[str, str] | None = None):
     b = InlineKeyboardBuilder()
     for r in rarities:
-        label = f"{r['name']} ({format_chance(r['chance'])}%)"
-        b.row(InlineKeyboardButton(text=label, callback_data=f"{cb_prefix}:{r['id']}"))
+        b.row(InlineKeyboardButton(text=rarity_label(r, badges), callback_data=f"{cb_prefix}:{r['id']}"))
     return b.as_markup()
 
 
@@ -119,7 +124,7 @@ def cards_admin_kb(summon_id, cards, page, page_size):
     chunk, total_pages = paginate(cards, page, page_size)
     b = InlineKeyboardBuilder()
     for c in chunk:
-        label = f"{c['name']} ({c['rarity_name']})"
+        label = f"{c['name']} · {c['rarity_name']}"
         b.row(InlineKeyboardButton(text=label, callback_data=f"adm_card_view:{c['id']}"))
     b.row(InlineKeyboardButton(text="➕ Добавить карточку", callback_data=f"adm_card_add:{summon_id}"))
     with_pagination(b, page, total_pages, f"adm_cards_page:{summon_id}")

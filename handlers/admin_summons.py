@@ -7,13 +7,18 @@ from config import PAGE_SIZE
 from handlers.admin_menu import require_admin
 from keyboards import cancel_kb, confirm_kb, summons_admin_kb
 from states import AddSummon
+from utils import DIV, esc
 
 router = Router(name="admin_summons")
 
 
 async def show_summons(target, page: int = 0, edit: bool = True):
     summons = await db.list_summons()
-    text = "🎲 <b>Саммоны</b>" if summons else "🎲 <b>Саммоны</b>\n\nПока ни одного саммона нет."
+    text = (
+        f"🎲 <b>Саммоны</b>\n{DIV}\n<i>Всего: {len(summons)}</i>"
+        if summons
+        else f"🎲 <b>Саммоны</b>\n{DIV}\n<i>Пока ни одного саммона нет.</i>"
+    )
     kb = summons_admin_kb(summons, page, PAGE_SIZE)
     if edit:
         await target.edit_text(text, reply_markup=kb)
@@ -60,7 +65,7 @@ async def process_summon_name(message: Message, state: FSMContext):
         return
     await db.add_summon(name)
     await state.clear()
-    await message.answer(f"✅ Саммон «{name}» добавлен.")
+    await message.answer(f"✅ Саммон <b>{esc(name)}</b> добавлен.")
     await show_summons(message, edit=False)
 
 
@@ -74,9 +79,9 @@ async def cb_summon_del(call: CallbackQuery):
         await call.answer("Уже удалён", show_alert=True)
         return
     card_count = await db.count_cards_in_summon(summon_id)
-    warn = f"\n\n⚠️ Также будет удалено карточек: {card_count}" if card_count else ""
+    warn = f"\n<i>⚠️ Вместе с ним удалится карточек: {card_count}</i>" if card_count else ""
     await call.message.edit_text(
-        f"Удалить саммон «{summon['name']}»?{warn}",
+        f"🗑 Удалить саммон <b>{esc(summon['name'])}</b>?{warn}",
         reply_markup=confirm_kb(f"adm_summon_del_yes:{summon_id}", "adm:summons"),
     )
     await call.answer()

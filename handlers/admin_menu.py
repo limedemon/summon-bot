@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery
 
 import db
 from keyboards import admin_menu_kb
+from utils import DIV
 
 router = Router(name="admin_menu")
 
@@ -20,7 +21,7 @@ async def cb_admin_menu(call: CallbackQuery, state: FSMContext):
     if not await require_admin(call):
         return
     await state.clear()
-    text = "⚙️ <b>Админ-панель</b>"
+    text = f"⚙️ <b>Админ-панель</b>\n{DIV}\n<i>Выбери раздел:</i>"
     kb = admin_menu_kb()
     try:
         await call.message.edit_text(text, reply_markup=kb)

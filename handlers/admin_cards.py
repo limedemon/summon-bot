@@ -7,18 +7,25 @@ from aiogram.types import InlineKeyboardButton
 import db
 from config import PAGE_SIZE
 from handlers.admin_menu import require_admin
-from keyboards import cancel_kb, card_view_kb, cards_admin_kb, confirm_kb, summons_pick_kb
+from keyboards import (
+    cancel_kb,
+    card_view_kb,
+    cards_admin_kb,
+    confirm_kb,
+    rarity_label,
+    summons_pick_kb,
+)
 from states import AddCard, EditCard
-from utils import format_chance, parse_positive_int
+from utils import DIV, esc, exp_word, format_chance, parse_positive_int, rarity_badge, rarity_badges
 
 router = Router(name="admin_cards")
 
 
 def rarity_pick_for_card_kb(rarities, cb_prefix: str, back_cb: str):
     b = InlineKeyboardBuilder()
+    badges = rarity_badges(rarities)
     for r in rarities:
-        label = f"{r['name']} ({format_chance(r['chance'])}%)"
-        b.row(InlineKeyboardButton(text=label, callback_data=f"{cb_prefix}:{r['id']}"))
+        b.row(InlineKeyboardButton(text=rarity_label(r, badges), callback_data=f"{cb_prefix}:{r['id']}"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb))
     return b.as_markup()
 
@@ -26,10 +33,13 @@ def rarity_pick_for_card_kb(rarities, cb_prefix: str, back_cb: str):
 async def show_summon_picker(target, edit: bool = True):
     summons = await db.list_summons()
     if not summons:
-        text = "🎴 <b>Карточки</b>\n\nСначала создай саммон в разделе «🎲 Саммоны»."
+        text = (
+            f"🎴 <b>Карточки</b>\n{DIV}\n"
+            "<i>Сначала создай саммон в разделе «Саммоны».</i>"
+        )
         kb = summons_pick_kb([], "adm_cards_summon", "adm:menu")
     else:
-        text = "🎴 <b>Карточки</b>\n\nВыбери саммон:"
+        text = f"🎴 <b>Карточки</b>\n{DIV}\n<i>Выбери саммон:</i>"
         kb = summons_pick_kb(summons, "adm_cards_summon", "adm:menu")
     if edit:
         await target.edit_text(text, reply_markup=kb)
@@ -40,9 +50,10 @@ async def show_summon_picker(target, edit: bool = True):
 async def show_cards_list(target, summon_id: int, page: int = 0, edit: bool = True):
     summon = await db.get_summon(summon_id)
     cards = await db.list_cards_in_summon(summon_id)
-    text = f"🎴 <b>Карточки саммона «{summon['name']}»</b>" if summon else "🎴 Карточки"
+    title = esc(summon["name"]) if summon else "Карточки"
+    text = f"🎴 <b>{title}</b>\n{DIV}\n<i>Карточек: {len(cards)}</i>"
     if not cards:
-        text += "\n\nПока ни одной карточки нет."
+        text = f"🎴 <b>{title}</b>\n{DIV}\n<i>Пока ни одной карточки нет.</i>"
     kb = cards_admin_kb(summon_id, cards, page, PAGE_SIZE)
     if edit:
         await target.edit_text(text, reply_markup=kb)
@@ -50,11 +61,20 @@ async def show_cards_list(target, summon_id: int, page: int = 0, edit: bool = Tr
         await target.answer(text, reply_markup=kb)
 
 
-def render_card_caption(card) -> str:
+async def render_card_caption(card) -> str:
+    """Same visual language as a summon result, plus the admin-only numbers."""
+    badges = rarity_badges(await db.list_rarities_sorted())
+    exp = int(card["exp_reward"])
+    summon = card["summon_name"] if "summon_name" in card.keys() else None
+    subtitle = f"{esc(card['rarity_name'])} · {format_chance(card['rarity_chance'])}%"
+    if summon:
+        subtitle += f" · {esc(summon)}"
     return (
-        f"🎴 <b>{card['name']}</b>\n"
-        f"💎 Редкость: {card['rarity_name']} ({format_chance(card['rarity_chance'])}%)\n"
-        f"✨ Опыт: {card['exp_reward']}"
+        f"{rarity_badge(card['rarity_chance'], badges)} <b>{esc(card['name'])}</b>\n"
+        f"<i>{subtitle}</i>\n"
+        f"{DIV}\n"
+        f"✨ Награда · <b>{exp}</b> {exp_word(exp)}\n"
+        f"🆔 <code>{card['id']}</code>"
     )
 
 
@@ -62,14 +82,14 @@ async def send_card_view(message: Message, card_id: int):
     card = await db.get_card(card_id)
     await message.answer_photo(
         photo=card["photo_file_id"],
-        caption=render_card_caption(card),
+        caption=await render_card_caption(card),
         reply_markup=card_view_kb(card_id, card["summon_id"]),
     )
 
 
 async def refresh_card_view(bot: Bot, chat_id: int, message_id: int, card_id: int, new_photo: str | None = None):
     card = await db.get_card(card_id)
-    caption = render_card_caption(card)
+    caption = await render_card_caption(card)
     kb = card_view_kb(card_id, card["summon_id"])
     if new_photo:
         await bot.edit_message_media(
@@ -260,12 +280,14 @@ async def cb_edit_rarity(call: CallbackQuery):
         return
     card_id = int(call.data.split(":")[1])
     rarities = await db.list_rarities_sorted()
+    badges = rarity_badges(rarities)
     b = InlineKeyboardBuilder()
     for r in rarities:
-        label = f"{r['name']} ({format_chance(r['chance'])}%)"
-        b.row(InlineKeyboardButton(text=label, callback_data=f"adm_card_set_rarity:{card_id}:{r['id']}"))
+        b.row(InlineKeyboardButton(
+            text=rarity_label(r, badges), callback_data=f"adm_card_set_rarity:{card_id}:{r['id']}"
+        ))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_card_view_back:{card_id}"))
-    await call.message.edit_caption(caption="💎 Выбери новую редкость:", reply_markup=b.as_markup())
+    await call.message.edit_caption(caption="💎 <i>Выбери новую редкость:</i>", reply_markup=b.as_markup())
     await call.answer()
 
 
@@ -326,7 +348,7 @@ async def cb_card_del(call: CallbackQuery):
         await call.answer("Уже удалена", show_alert=True)
         return
     await call.message.edit_caption(
-        caption=f"Удалить карточку «{card['name']}»?",
+        caption=f"🗑 Удалить карточку <b>{esc(card['name'])}</b>?",
         reply_markup=confirm_kb(f"adm_card_del_yes:{card_id}", f"adm_card_view_back:{card_id}"),
     )
     await call.answer()

@@ -6,6 +6,7 @@ import db
 from handlers.admin_menu import require_admin
 from keyboards import admins_kb, cancel_kb
 from states import AddAdmin
+from utils import DIV
 
 router = Router(name="admin_admins")
 
@@ -13,7 +14,7 @@ router = Router(name="admin_admins")
 async def show_admins(target, edit: bool = True):
     admin_ids = await db.get_admin_ids()
     main_admin_id = await db.get_main_admin_id()
-    text = "👤 <b>Админы</b>"
+    text = f"👤 <b>Админы</b>\n{DIV}\n<i>👑 — главный, его нельзя снять.</i>"
     kb = admins_kb(admin_ids, main_admin_id)
     if edit:
         await target.edit_text(text, reply_markup=kb)
@@ -68,7 +69,7 @@ async def process_add_admin(message: Message, state: FSMContext):
         await message.answer("⚠️ Этот пользователь уже админ.")
     else:
         await db.add_admin(target_id)
-        await message.answer(f"✅ Пользователь {target_id} назначен админом.")
+        await message.answer(f"✅ Пользователь <code>{target_id}</code> назначен админом.")
     await state.clear()
     await show_admins(message, edit=False)
 
