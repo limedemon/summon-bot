@@ -19,9 +19,8 @@
 ## Запуск
 
 1. `pip install -r requirements.txt`
-2. Задать переменные окружения:
-   - `BOT_TOKEN` — токен от @BotFather;
-   - `DATABASE_URL` — строка подключения к PostgreSQL (`postgresql://user:pass@host:port/dbname`).
+2. Задать переменную окружения `BOT_TOKEN` (токен от @BotFather).
+   Строка подключения к PostgreSQL зашита в `config.py` (`DATABASE_URL`).
 3. У бота нужно включить инлайн-режим через @BotFather (`/setinline`).
 4. `python main.py`
 
