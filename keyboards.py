@@ -28,11 +28,9 @@ def back_kb(callback_data: str, text: str = "⬅️ Назад"):
 def admin_menu_kb():
     b = InlineKeyboardBuilder()
     b.button(text="🎲 Саммоны", callback_data="adm:summons")
-    b.button(text="🎴 Карточки", callback_data="adm:cards")
-    b.button(text="💎 Редкости", callback_data="adm:rarities")
     b.button(text="👤 Админы", callback_data="adm:admins")
     b.button(text="⬅️ Назад", callback_data="menu:main")
-    b.adjust(2, 2, 1)
+    b.adjust(2, 1)
     return b.as_markup()
 
 
@@ -60,10 +58,20 @@ def summons_admin_kb(summons, page, page_size):
     chunk, total_pages = paginate(summons, page, page_size)
     b = InlineKeyboardBuilder()
     for s in chunk:
-        b.row(InlineKeyboardButton(text=f"🗑 {s['name']}", callback_data=f"adm_summon_del:{s['id']}"))
+        b.row(InlineKeyboardButton(text=f"🎲 {s['name']}", callback_data=f"adm_summon_hub:{s['id']}"))
     b.row(InlineKeyboardButton(text="➕ Добавить саммон", callback_data="adm_summon_add"))
     with_pagination(b, page, total_pages, "adm_summons_page")
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="adm:menu"))
+    return b.as_markup()
+
+
+def summon_hub_kb(summon_id: int):
+    b = InlineKeyboardBuilder()
+    b.button(text="💎 Редкости", callback_data=f"adm_rarities:{summon_id}")
+    b.button(text="🎴 Юниты", callback_data=f"adm_cards_summon:{summon_id}")
+    b.button(text="🗑 Удалить саммон", callback_data=f"adm_summon_del:{summon_id}")
+    b.button(text="⬅️ Назад", callback_data="adm:summons")
+    b.adjust(2, 1, 1)
     return b.as_markup()
 
 
@@ -77,7 +85,7 @@ def confirm_kb(yes_cb: str, no_cb: str):
 
 # ---------- rarities ----------
 
-def rarities_admin_kb(rarities, page, page_size):
+def rarities_admin_kb(rarities, page, page_size, summon_id: int):
     chunk, total_pages = paginate(rarities, page, page_size)
     b = InlineKeyboardBuilder()
     for r in chunk:
@@ -87,37 +95,22 @@ def rarities_admin_kb(rarities, page, page_size):
             InlineKeyboardButton(text="✏️", callback_data=f"adm_rarity_edit:{r['id']}"),
             InlineKeyboardButton(text="🗑", callback_data=f"adm_rarity_del:{r['id']}"),
         )
-    b.row(InlineKeyboardButton(text="➕ Добавить редкость", callback_data="adm_rarity_add"))
-    with_pagination(b, page, total_pages, "adm_rarities_page")
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="adm:menu"))
+    b.row(InlineKeyboardButton(text="➕ Добавить редкость", callback_data=f"adm_rarity_add:{summon_id}"))
+    with_pagination(b, page, total_pages, f"adm_rarities_page:{summon_id}")
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_summon_hub:{summon_id}"))
     return b.as_markup()
 
 
-def rarity_edit_kb(rarity_id: int):
+def rarity_edit_kb(rarity_id: int, summon_id: int):
     b = InlineKeyboardBuilder()
     b.button(text="✏️ Название", callback_data=f"adm_rarity_edit_name:{rarity_id}")
     b.button(text="✏️ Шанс", callback_data=f"adm_rarity_edit_chance:{rarity_id}")
-    b.button(text="⬅️ Назад", callback_data="adm:rarities")
+    b.button(text="⬅️ Назад", callback_data=f"adm_rarities:{summon_id}")
     b.adjust(2, 1)
     return b.as_markup()
 
 
-def rarity_pick_kb(rarities, cb_prefix: str):
-    b = InlineKeyboardBuilder()
-    for r in rarities:
-        b.row(InlineKeyboardButton(text=rarity_label(r), callback_data=f"{cb_prefix}:{r['id']}"))
-    return b.as_markup()
-
-
 # ---------- cards ----------
-
-def summons_pick_kb(summons, cb_prefix: str, back_cb: str):
-    b = InlineKeyboardBuilder()
-    for s in summons:
-        b.row(InlineKeyboardButton(text=s["name"], callback_data=f"{cb_prefix}:{s['id']}"))
-    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb))
-    return b.as_markup()
-
 
 def cards_admin_kb(summon_id, cards, page, page_size):
     chunk, total_pages = paginate(cards, page, page_size)
@@ -127,7 +120,7 @@ def cards_admin_kb(summon_id, cards, page, page_size):
         b.row(InlineKeyboardButton(text=label, callback_data=f"adm_card_view:{c['id']}"))
     b.row(InlineKeyboardButton(text="➕ Добавить карточку", callback_data=f"adm_card_add:{summon_id}"))
     with_pagination(b, page, total_pages, f"adm_cards_page:{summon_id}")
-    b.row(InlineKeyboardButton(text="⬅️ К саммонам", callback_data="adm:cards"))
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"adm_summon_hub:{summon_id}"))
     return b.as_markup()
 
 

@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 import db
 from config import PAGE_SIZE
 from handlers.admin_menu import require_admin
-from keyboards import cancel_kb, confirm_kb, summons_admin_kb
+from keyboards import cancel_kb, confirm_kb, summon_hub_kb, summons_admin_kb
 from states import AddSummon
 from utils import DIV, esc
 
@@ -26,12 +26,43 @@ async def show_summons(target, page: int = 0, edit: bool = True):
         await target.answer(text, reply_markup=kb)
 
 
+async def show_summon_hub(target, summon_id: int, edit: bool = True):
+    summon = await db.get_summon(summon_id)
+    title = esc(summon["name"]) if summon else "Саммон"
+    rarities_count = await db.count_rarities_in_summon(summon_id)
+    cards_count = await db.count_cards_in_summon(summon_id)
+    text = (
+        f"🎲 <b>{title}</b>\n{DIV}\n"
+        f"<i>Редкостей: {rarities_count} · Юнитов: {cards_count}</i>"
+    )
+    kb = summon_hub_kb(summon_id)
+    if edit:
+        await target.edit_text(text, reply_markup=kb)
+    else:
+        await target.answer(text, reply_markup=kb)
+
+
 @router.callback_query(F.data == "adm:summons")
 async def cb_summons(call: CallbackQuery, state: FSMContext):
     if not await require_admin(call):
         return
     await state.clear()
     await show_summons(call.message)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("adm_summon_hub:"))
+async def cb_summon_hub(call: CallbackQuery, state: FSMContext):
+    if not await require_admin(call):
+        return
+    summon_id = int(call.data.split(":")[1])
+    summon = await db.get_summon(summon_id)
+    if not summon:
+        await call.answer("Уже удалён", show_alert=True)
+        await show_summons(call.message)
+        return
+    await state.clear()
+    await show_summon_hub(call.message, summon_id)
     await call.answer()
 
 
@@ -79,10 +110,15 @@ async def cb_summon_del(call: CallbackQuery):
         await call.answer("Уже удалён", show_alert=True)
         return
     card_count = await db.count_cards_in_summon(summon_id)
-    warn = f"\n<i>⚠️ Вместе с ним удалится карточек: {card_count}</i>" if card_count else ""
+    rarity_count = await db.count_rarities_in_summon(summon_id)
+    warn = (
+        f"\n<i>⚠️ Вместе с ним удалятся юниты ({card_count}) и редкости ({rarity_count})</i>"
+        if card_count or rarity_count
+        else ""
+    )
     await call.message.edit_text(
         f"🗑 Удалить саммон <b>{esc(summon['name'])}</b>?{warn}",
-        reply_markup=confirm_kb(f"adm_summon_del_yes:{summon_id}", "adm:summons"),
+        reply_markup=confirm_kb(f"adm_summon_del_yes:{summon_id}", f"adm_summon_hub:{summon_id}"),
     )
     await call.answer()
 

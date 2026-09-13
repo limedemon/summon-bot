@@ -13,7 +13,6 @@ from keyboards import (
     cards_admin_kb,
     confirm_kb,
     rarity_label,
-    summons_pick_kb,
 )
 from states import AddCard, EditCard
 from utils import DIV, esc, exp_word, format_chance, parse_positive_int
@@ -27,23 +26,6 @@ def rarity_pick_for_card_kb(rarities, cb_prefix: str, back_cb: str):
         b.row(InlineKeyboardButton(text=rarity_label(r), callback_data=f"{cb_prefix}:{r['id']}"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb))
     return b.as_markup()
-
-
-async def show_summon_picker(target, edit: bool = True):
-    summons = await db.list_summons()
-    if not summons:
-        text = (
-            f"🎴 <b>Карточки</b>\n{DIV}\n"
-            "<i>Сначала создай саммон в разделе «Саммоны».</i>"
-        )
-        kb = summons_pick_kb([], "adm_cards_summon", "adm:menu")
-    else:
-        text = f"🎴 <b>Карточки</b>\n{DIV}\n<i>Выбери саммон:</i>"
-        kb = summons_pick_kb(summons, "adm_cards_summon", "adm:menu")
-    if edit:
-        await target.edit_text(text, reply_markup=kb)
-    else:
-        await target.answer(text, reply_markup=kb)
 
 
 async def show_cards_list(target, summon_id: int, page: int = 0, edit: bool = True):
@@ -104,15 +86,6 @@ async def refresh_card_view(bot: Bot, chat_id: int, message_id: int, card_id: in
 
 # ---------- navigation ----------
 
-@router.callback_query(F.data == "adm:cards")
-async def cb_cards(call: CallbackQuery, state: FSMContext):
-    if not await require_admin(call):
-        return
-    await state.clear()
-    await show_summon_picker(call.message)
-    await call.answer()
-
-
 @router.callback_query(F.data.startswith("adm_cards_summon:"))
 async def cb_cards_summon(call: CallbackQuery):
     if not await require_admin(call):
@@ -148,9 +121,9 @@ async def cb_card_add(call: CallbackQuery, state: FSMContext):
     if not await require_admin(call):
         return
     summon_id = int(call.data.split(":")[1])
-    rarities = await db.list_rarities_sorted()
+    rarities = await db.list_rarities_sorted(summon_id)
     if not rarities:
-        await call.answer("⛔ Сначала создай хотя бы одну редкость.", show_alert=True)
+        await call.answer("⛔ Сначала создай хотя бы одну редкость для этого саммона.", show_alert=True)
         return
     await state.update_data(summon_id=summon_id)
     await state.set_state(AddCard.photo)
@@ -182,8 +155,8 @@ async def process_add_card_name(message: Message, state: FSMContext):
         return
     await state.update_data(name=name)
     await state.set_state(AddCard.rarity)
-    rarities = await db.list_rarities_sorted()
     data = await state.get_data()
+    rarities = await db.list_rarities_sorted(data["summon_id"])
     await message.answer(
         "💎 Выбери редкость карточки:",
         reply_markup=rarity_pick_for_card_kb(
@@ -277,7 +250,11 @@ async def cb_edit_rarity(call: CallbackQuery):
     if not await require_admin(call):
         return
     card_id = int(call.data.split(":")[1])
-    rarities = await db.list_rarities_sorted()
+    card = await db.get_card(card_id)
+    if not card:
+        await call.answer("Уже удалена", show_alert=True)
+        return
+    rarities = await db.list_rarities_sorted(card["summon_id"])
     b = InlineKeyboardBuilder()
     for r in rarities:
         b.row(InlineKeyboardButton(

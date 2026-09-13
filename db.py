@@ -20,15 +20,16 @@ CREATE TABLE IF NOT EXISTS users (
     first_seen BIGINT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS rarities (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    chance TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS summons (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rarities (
+    id SERIAL PRIMARY KEY,
+    summon_id INTEGER NOT NULL REFERENCES summons(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    chance TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS cards (
@@ -58,10 +59,38 @@ CREATE TABLE IF NOT EXISTS cooldowns (
 _pool: asyncpg.Pool | None = None
 
 
+async def _migrate_rarities_to_per_summon(conn: asyncpg.Connection):
+    """Rarities used to be global; now each one belongs to a summon."""
+    has_column = await conn.fetchval(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'rarities' AND column_name = 'summon_id'"
+    )
+    if has_column:
+        return
+    async with conn.transaction():
+        await conn.execute("ALTER TABLE rarities ADD COLUMN summon_id INTEGER REFERENCES summons(id) ON DELETE CASCADE")
+        await conn.execute(
+            """
+            UPDATE rarities r SET summon_id = (
+                SELECT c.summon_id FROM cards c WHERE c.rarity_id = r.id LIMIT 1
+            )
+            WHERE r.summon_id IS NULL
+            """
+        )
+        # Rarities nobody ever used can't be assigned to a summon — drop them.
+        await conn.execute("DELETE FROM rarities WHERE summon_id IS NULL")
+        await conn.execute("ALTER TABLE rarities ALTER COLUMN summon_id SET NOT NULL")
+
+
 async def init_db():
     global _pool
     _pool = await asyncpg.create_pool(dsn=DATABASE_URL)
     async with _pool.acquire() as conn:
+        has_rarities = await conn.fetchval(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'rarities'"
+        )
+        if has_rarities:
+            await _migrate_rarities_to_per_summon(conn)
         await conn.execute(SCHEMA)
 
 
@@ -134,10 +163,15 @@ async def add_exp(user_id: int, amount: int):
 
 # ---------- rarities ----------
 
-async def list_rarities_sorted() -> list[asyncpg.Record]:
+async def list_rarities_sorted(summon_id: int) -> list[asyncpg.Record]:
     async with _pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM rarities")
+        rows = await conn.fetch("SELECT * FROM rarities WHERE summon_id = $1", summon_id)
         return sorted(rows, key=lambda r: float(r["chance"]), reverse=True)
+
+
+async def count_rarities_in_summon(summon_id: int) -> int:
+    async with _pool.acquire() as conn:
+        return await conn.fetchval("SELECT COUNT(*) FROM rarities WHERE summon_id = $1", summon_id)
 
 
 async def get_rarity(rarity_id: int) -> asyncpg.Record | None:
@@ -145,10 +179,11 @@ async def get_rarity(rarity_id: int) -> asyncpg.Record | None:
         return await conn.fetchrow("SELECT * FROM rarities WHERE id = $1", rarity_id)
 
 
-async def add_rarity(name: str, chance: str) -> int:
+async def add_rarity(summon_id: int, name: str, chance: str) -> int:
     async with _pool.acquire() as conn:
         return await conn.fetchval(
-            "INSERT INTO rarities (name, chance) VALUES ($1, $2) RETURNING id", name, chance
+            "INSERT INTO rarities (summon_id, name, chance) VALUES ($1, $2, $3) RETURNING id",
+            summon_id, name, chance,
         )
 
 
