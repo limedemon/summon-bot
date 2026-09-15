@@ -12,7 +12,7 @@ def rarity_label(rarity) -> str:
 def main_menu_kb(is_admin: bool):
     b = InlineKeyboardBuilder()
     b.button(text="👤 Профиль", callback_data="menu:profile")
-    b.button(text="🎴 Коллекция", callback_data="menu:collection")
+    b.button(text="🗂 Индекс", callback_data="idx:general:0")
     if is_admin:
         b.button(text="⚙️ Админка", callback_data="adm:menu")
     b.adjust(2, 1)
@@ -80,6 +80,22 @@ def confirm_kb(yes_cb: str, no_cb: str):
     b.button(text="✅ Да", callback_data=yes_cb)
     b.button(text="❌ Отмена", callback_data=no_cb)
     b.adjust(2)
+    return b.as_markup()
+
+
+# ---------- index (visual card catalog) ----------
+
+def index_kb(summons, scope: str, scope_id, page: int, total_pages: int):
+    b = InlineKeyboardBuilder()
+    for s in summons:
+        active = scope == "summon" and scope_id == s["id"]
+        text = ("• " if active else "") + s["name"]
+        b.row(InlineKeyboardButton(text=text, callback_data=f"idx:summon:{s['id']}:0"))
+    if scope == "summon":
+        b.row(InlineKeyboardButton(text="🗂 Все саммоны", callback_data="idx:general:0"))
+    cb_prefix = "idx:general" if scope == "general" else f"idx:summon:{scope_id}"
+    with_pagination(b, page, total_pages, cb_prefix)
+    b.row(InlineKeyboardButton(text="⬅️ Меню", callback_data="menu:main"))
     return b.as_markup()
 
 

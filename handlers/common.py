@@ -1,11 +1,14 @@
 from aiogram import Bot, F, Router
 from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
+import config
 import db
-from keyboards import back_kb, main_menu_kb
-from utils import DIV, cards_word, esc, exp_word, format_chance
+import rendering
+from keyboards import back_kb, index_kb, main_menu_kb
+from leveling import MAX_LEVEL, compute_level
+from utils import DIV, esc
 
 router = Router(name="common")
 
@@ -54,8 +57,10 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: Comm
     await state.clear()
     # Deep link from the "смотреть коллекцию" button under an inline summon result.
     if (command.args or "").strip() == "collection":
-        text = await render_collection(message.from_user.id)
-        await message.answer(text, reply_markup=back_kb("menu:main"))
+        photo, kb = await render_index(bot, message.from_user.id, "general", None, 0)
+        await message.answer_photo(
+            photo=BufferedInputFile(photo.getvalue(), filename="index.jpg"), reply_markup=kb
+        )
         return
     await show_main_menu(message, bot)
 
@@ -68,78 +73,86 @@ async def cb_main(call: CallbackQuery, state: FSMContext, bot: Bot):
 
 
 @router.callback_query(F.data == "menu:profile")
-async def cb_profile(call: CallbackQuery):
-    user = await db.get_user(call.from_user.id)
-    exp = int(user["exp"]) if user else 0
-    collection = await db.get_collection(call.from_user.id)
+async def cb_profile(call: CallbackQuery, bot: Bot):
+    user_id = call.from_user.id
+    user = await db.get_user(user_id)
+    total_exp = int(user["exp"]) if user else 0
+    level, exp_into, exp_needed = compute_level(total_exp)
 
-    lines = [
-        f"👤 <b>{esc(call.from_user.first_name)}</b>",
-        DIV,
-        f"✨ Опыт · <b>{exp}</b> {exp_word(exp)}",
-        f"🎴 Коллекция · <b>{len(collection)}</b> {cards_word(len(collection))}",
-    ]
-    if collection:
-        best = min(collection, key=lambda c: float(c["rarity_chance"]))
-        lines.append(
-            f"💎 Жемчужина · "
-            f"<b>{esc(best['name'])}</b> <i>({esc(best['rarity_name'])})</i>"
-        )
-    text = "\n".join(lines)
+    collection = await db.get_collection(user_id)
+    total_cards = await db.count_cards_total()
+    best_card = min(collection, key=lambda c: float(c["rarity_chance"])) if collection else None
+    avatar_file_id = await get_avatar_file_id(bot, user_id)
+
+    photo = await rendering.render_profile_image(
+        bot,
+        avatar_file_id,
+        call.from_user.first_name or "Игрок",
+        level,
+        MAX_LEVEL,
+        exp_into,
+        exp_needed,
+        len(collection),
+        total_cards,
+        best_card,
+    )
     try:
         await call.message.delete()
     except Exception:
         pass
-    await call.message.answer(text, reply_markup=back_kb("menu:main"))
+    await call.message.answer_photo(
+        photo=BufferedInputFile(photo.getvalue(), filename="profile.jpg"),
+        reply_markup=back_kb("menu:main"),
+    )
     await call.answer()
 
 
-async def render_collection(user_id: int) -> str:
-    """Collection screen text — shared by the menu button and the /start deep link."""
-    collection = await db.get_collection(user_id)
-    if not collection:
-        text = (
-            "🎴 <b>Коллекция</b>\n"
-            f"{DIV}\n"
-            "<i>Пока пусто.</i>\n"
-            "Вызови бота через @ в любом чате — и здесь появится первая карточка."
-        )
+async def render_index(bot: Bot, user_id: int, scope: str, scope_id: int | None, page: int):
+    """Builds the visual index photo + its keyboard — shared by the menu button,
+    the /start deep link and in-place pagination/filter navigation."""
+    owned_ids = await db.get_owned_card_ids(user_id)
+
+    summon = await db.get_summon(scope_id) if scope == "summon" and scope_id is not None else None
+    if summon is not None:
+        cards = await db.list_cards_in_summon(scope_id)
+        scope_label = summon["name"]
+        effective_scope, effective_id = "summon", scope_id
     else:
-        # rarest groups first, cards inside a group alphabetically
-        groups: dict[str, list] = {}
-        for c in collection:
-            groups.setdefault(c["rarity_name"], []).append(c)
-        order = sorted(groups, key=lambda name: float(groups[name][0]["rarity_chance"]))
+        cards = await db.list_all_cards()
+        scope_label = "Все саммоны"
+        effective_scope, effective_id = "general", None
 
-        total = len(collection)
-        lines = [
-            f"🎴 <b>Коллекция</b> · <b>{total}</b> {cards_word(total)}",
-            DIV,
-        ]
-        for name in order:
-            cards = groups[name]
-            chance = cards[0]["rarity_chance"]
-            lines.append(
-                f"\n<b>{esc(name)}</b> "
-                f"<i>{format_chance(chance)}%</i> · {len(cards)}"
-            )
-            for c in sorted(cards, key=lambda x: x["name"].lower()):
-                lines.append(f"   <i>{esc(c['summon_name'])}</i> — {esc(c['name'])}")
+    total_count = len(cards)
+    unlocked_count = sum(1 for c in cards if c["id"] in owned_ids)
+    page_size = config.INDEX_PAGE_SIZE
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    page_cards = cards[page * page_size:(page + 1) * page_size]
 
-        text = "\n".join(lines)
-        if len(text) > 3900:
-            text = text[:3900].rsplit("\n", 1)[0] + "\n\n<i>…и ещё немного — список длинный.</i>"
-    return text
+    photo = await rendering.render_index_image(
+        bot, page_cards, owned_ids, scope_label, page, total_pages, unlocked_count, total_count
+    )
+    summons = await db.list_summons_with_cards()
+    kb = index_kb(summons, effective_scope, effective_id, page, total_pages)
+    return photo, kb
 
 
-@router.callback_query(F.data == "menu:collection")
-async def cb_collection(call: CallbackQuery):
-    text = await render_collection(call.from_user.id)
+@router.callback_query(F.data.startswith("idx:"))
+async def cb_index(call: CallbackQuery, bot: Bot):
+    parts = call.data.split(":")
+    if parts[1] == "general":
+        scope, scope_id, page = "general", None, int(parts[2])
+    else:
+        scope, scope_id, page = "summon", int(parts[2]), int(parts[3])
+
+    photo, kb = await render_index(bot, call.from_user.id, scope, scope_id, page)
     try:
         await call.message.delete()
     except Exception:
         pass
-    await call.message.answer(text, reply_markup=back_kb("menu:main"))
+    await call.message.answer_photo(
+        photo=BufferedInputFile(photo.getvalue(), filename="index.jpg"), reply_markup=kb
+    )
     await call.answer()
 
 

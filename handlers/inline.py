@@ -14,6 +14,7 @@ from aiogram.types import (
 import botinfo
 import db
 from config import COOLDOWN_SECONDS
+from leveling import compute_level
 from utils import (
     DIV,
     esc,
@@ -38,7 +39,7 @@ def collection_kb() -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
-                text="🎴 Смотреть коллекцию",
+                text="🗂 Смотреть индекс",
                 url=f"https://t.me/{botinfo.BOT_USERNAME}?start=collection",
             )
         ]]
@@ -121,6 +122,10 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
         )
         return
 
+    user_before = await db.get_user(user_id)
+    old_exp = int(user_before["exp"]) if user_before else 0
+    old_level, _, _ = compute_level(old_exp)
+
     card = weighted_pick(cards, "rarity_chance")
     await db.set_cooldown(user_id, summon_id)
     await db.add_exp(user_id, card["exp_reward"])
@@ -130,6 +135,7 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
     exp = int(card["exp_reward"])
     user = await db.get_user(user_id)
     total_exp = int(user["exp"]) if user else exp
+    new_level, _, _ = compute_level(total_exp)
 
     header = (
         "🎊 <b>Новая карточка!</b>"
@@ -162,3 +168,14 @@ async def handle_chosen_result(chosen: ChosenInlineResult, bot: Bot):
             parse_mode="HTML",
             reply_markup=kb,
         )
+
+    if new_level > old_level:
+        # Best-effort DM: the roll usually happens inline in someone else's chat,
+        # so this only reaches players who have a private chat with the bot open.
+        try:
+            await bot.send_message(
+                user_id,
+                f"🎉 <b>Новый уровень!</b>\nТеперь у тебя <b>{new_level}</b> уровень.",
+            )
+        except Exception:
+            pass

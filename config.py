@@ -15,3 +15,10 @@ DATABASE_URL = "postgresql://bothost_db_737ab6c3c472:6miPHTwM9Ju1jX5ieznlQDP86OO
 
 COOLDOWN_SECONDS = 5 * 60
 PAGE_SIZE = 8
+
+# Visual index screen: a square grid of unit tiles per page.
+INDEX_COLS = 6
+INDEX_ROWS = 3
+INDEX_PAGE_SIZE = INDEX_COLS * INDEX_ROWS
+
+THUMB_CACHE_DIR = "data/thumbs"

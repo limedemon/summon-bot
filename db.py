@@ -315,6 +315,31 @@ async def grant_card(user_id: int, card_id: int):
         )
 
 
+async def list_all_cards() -> list[asyncpg.Record]:
+    """Every card across every summon, for the general index screen."""
+    async with _pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT c.*, r.name AS rarity_name, r.chance AS rarity_chance, s.name AS summon_name
+            FROM cards c
+            JOIN rarities r ON r.id = c.rarity_id
+            JOIN summons s ON s.id = c.summon_id
+            ORDER BY s.name, c.name
+            """
+        )
+
+
+async def count_cards_total() -> int:
+    async with _pool.acquire() as conn:
+        return await conn.fetchval("SELECT COUNT(*) FROM cards")
+
+
+async def get_owned_card_ids(user_id: int) -> set[int]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch("SELECT card_id FROM user_cards WHERE user_id = $1", user_id)
+        return {r["card_id"] for r in rows}
+
+
 async def get_collection(user_id: int) -> list[asyncpg.Record]:
     async with _pool.acquire() as conn:
         return await conn.fetch(
